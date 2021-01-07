@@ -1,0 +1,648 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "262ee4f1cc793d5cc0302d24cbc64461",
+     "grade": false,
+     "grade_id": "cell-aa820d6aaf4304db",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "version = \"v1.11.101920\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "633eed63abf7c048ce331d6dd314c93d",
+     "grade": false,
+     "grade_id": "cell-24e63ee011a83003",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "---\n",
+    "# Assignment 4 Part 2: Counting in a Data Stream (50 pts)\n",
+    "\n",
+    "In this assignment, we're going to implement two algorithms for counting items in a data stream. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "03670db2c993d8794598a2367ef1e86b",
+     "grade": false,
+     "grade_id": "cell-edbc44e7eed6dd74",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "from emoji import UNICODE_EMOJI\n",
+    "\n",
+    "def extract_emojis(text):\n",
+    "    \"\"\"\n",
+    "    Extract all emojis from a str\n",
+    "    \"\"\"\n",
+    "    return [ch for ch in text if ch in UNICODE_EMOJI]\n",
+    "\n",
+    "class TwitterStream:\n",
+    "    \"\"\"\n",
+    "    Used to simulate a Twitter stream. \n",
+    "    \"\"\"\n",
+    "    \n",
+    "    def __init__(self, data_file):\n",
+    "        self.data_file = data_file\n",
+    "        self.data = open(self.data_file, \"r\")\n",
+    "    \n",
+    "    def __iter__(self):\n",
+    "        return self.reset()\n",
+    "    \n",
+    "    def __next__(self):\n",
+    "        next_line = self.data.readline()\n",
+    "        if next_line:\n",
+    "            return json.loads(next_line)[\"text\"]\n",
+    "        else:\n",
+    "            raise StopIteration\n",
+    "    \n",
+    "    def __del__(self):\n",
+    "        if not self.data.closed:\n",
+    "            self.data.close()\n",
+    "    \n",
+    "    def reset(self):\n",
+    "        if not self.data.closed:\n",
+    "            self.data.close()\n",
+    "        self.data = open(self.data_file, \"r\")\n",
+    "        return self"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "e11b2e2ae24ed5ee1f006a98c9d66a90",
+     "grade": false,
+     "grade_id": "cell-ffd221b6dbe6c445",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "Above we have imported the same `TwitterStream` class defined in Part 1 to simulate a Twitter stream. Remember, we are still facing one of the biggest challenges in mining data streams, that **we have limited storage capacity for the very high volume of incoming data, which may arrive at a very high velocity as well**. However, if we are only interested in the distribution of some simple items, such as emojis in this case, it might be possible to obtain approximate counts directly without curating a sample like what we did in Part 1. So let's now start exploring that possibility. \n",
+    "\n",
+    "\n",
+    "Again, there's a helper function `extract_emojis` available that helps you extract all emojis from a piece of text, and the variable `UNICODE_EMOJI` is a collection of all emojis that are circulating around the world. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "74f8c213580f48e027b9ea1beb8d17ad",
+     "grade": false,
+     "grade_id": "cell-d63bebc6fef0f0d1",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "## Question 1: Bloom Filters (25 pts)\n",
+    "\n",
+    "Recall from the lectures that a Bloom filter doesn't really count items in a data stream but is able to tell\n",
+    "* that an item has *definitely not appeared* in the data stream so far; or\n",
+    "\n",
+    "\n",
+    "* that an item has *possibly appeared* in the data stream so far. \n",
+    "\n",
+    "In this question, we'll implement a Bloom filter for emojis in a Twitter stream. \n",
+    "\n",
+    "A partially completed `BloomFilter` class is given to you below. It already has the two key ingradients of a Bloom filter: a number of `slots` to record the appearance of an item and a collection, `hash_fns`, of hash functions to compute the fingerprint of an item. Your job is to complete the following two functions:\n",
+    "\n",
+    "* `check_appearance`: it receives a single item and returns a `bool` value indicating whether the item has appeared or not so far;\n",
+    "\n",
+    "\n",
+    "* `do_filtering`: it receives a stream object and iterates over the stream. During each iteration, it extracts all emojis from a tweet, computes the fingerprint of each emoji and records the appearance of each emoji accordingly, as specified in the lecture slides. Finally it returns a copy of the `slots` of your `BloomFilter` for grading at every iteration, which you don't need to worry about. \n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "2d8cbeecce638a152b3763c16d11bc57",
+     "grade": false,
+     "grade_id": "cell-580c8a3fe199c750",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "There is also an accompanying `HashFunction` class that provides simple and deterministic hash functions. Once instantiated, they behave just like ordinary Python functions. For example, the code below computes the fingerprint of 😂, assuming we have `7919` (the 1000-th prime number) slots."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "e4d96fb9e4acc214699f5c6d519b208c",
+     "grade": false,
+     "grade_id": "cell-6e0fae93cd740963",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "7358 7372\n",
+      "7358 7372\n"
+     ]
+    }
+   ],
+   "source": [
+    "class HashFunction:\n",
+    "    def __init__(self, num_slots):\n",
+    "        self.num_slots = num_slots\n",
+    "        \n",
+    "    def __call__(self, x):\n",
+    "        return (hash(self) + hash(x)) % self.num_slots\n",
+    "\n",
+    "h1, h2 = HashFunction(7919), HashFunction(7919)\n",
+    "\n",
+    "# The two hash functions are distinct, but both are deterministic\n",
+    "print(h1(\"😂\"), h2(\"😂\"))\n",
+    "print(h1(\"😂\"), h2(\"😂\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "d0df67b6e519fdbf94e182af45582568",
+     "grade": false,
+     "grade_id": "cell-9245e216080b9e5f",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "It's worth noting that two different instantiations of the `HashFunction` class lead to two distinct hash functions, in that they assign different fingerprints to the same emoji. However, they are both deterministic, in that they always assign the same fingerprint to an emoji regardless of how many times you apply them. Every time you re-run the code above, the two hash functions will change and so will the fingerprints, but they will always be deterministic. These two properties may have some implications on your debugging strategies later on. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {
+    "deletable": false,
+    "nbgrader": {
+     "checksum": "672436d6c6c50457c1b82256ba5eda4a",
+     "grade": false,
+     "grade_id": "cell-993d3b939f534f62",
+     "locked": false,
+     "schema_version": 1,
+     "solution": true
+    }
+   },
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "\n",
+    "class BloomFilter:\n",
+    "    \n",
+    "    def __init__(self, num_slots, num_hash_fns):\n",
+    "        \n",
+    "        self.slots = np.zeros(num_slots, dtype=int)\n",
+    "        self.hash_fns = [HashFunction(num_slots) for _ in range(num_hash_fns)] # A list of distinct hash functions\n",
+    "    \n",
+    "    def check_appearance(self, item):\n",
+    "        \"\"\"\n",
+    "        Returns a bool value indicating whether an item has appeared or not\n",
+    "        \"\"\"\n",
+    "        \n",
+    "        has_appeared = True\n",
+    "        \n",
+    "        # YOUR CODE HERE\n",
+    "        #item passed in is emoji\n",
+    "        emoji = item\n",
+    "        resulting_slots = []\n",
+    "\n",
+    "        for hash_function in self.hash_fns:\n",
+    "            hashed_slot = hash_function(emoji)\n",
+    "            resulting_slots.append(hashed_slot)\n",
+    "\n",
+    "        for slot in resulting_slots:\n",
+    "            if self.slots[slot] == 0:\n",
+    "                has_appeared = False\n",
+    "\n",
+    "        \n",
+    "        return has_appeared\n",
+    "    \n",
+    "    def do_filtering(self, stream):\n",
+    "        \"\"\"\n",
+    "        Iterates over a stream, collects items of interest, calculates the fingerprints and records the appearance\n",
+    "        \"\"\"\n",
+    "        \n",
+    "        self.slots = np.zeros_like(self.slots) # reset the slots\n",
+    "        \n",
+    "        for item in stream: # iterate over the stream\n",
+    "            \n",
+    "            # YOUR CODE HERE\n",
+    "            #extract the emojis from the item \n",
+    "            item_emojis = extract_emojis(item)\n",
+    "            \n",
+    "            for emoji in item_emojis:\n",
+    "                #create the fingerprint and add the resulting print to resulting_slots\n",
+    "                resulting_slots = []\n",
+    "                \n",
+    "                for hash_function in self.hash_fns:\n",
+    "                    hashed_slot = hash_function(emoji)\n",
+    "                    resulting_slots.append(hashed_slot)\n",
+    "                \n",
+    "                #Before updating official self.slots with 1s, check FIRST if they arent already all 1s (aka hasnt appeared yet)\n",
+    "                self.check_appearance(emoji)\n",
+    "                \n",
+    "                \n",
+    "                #Populate the resulting hashed slot at its corresponding index in the slots with a 1\n",
+    "                for slot in resulting_slots:\n",
+    "                    self.slots[slot] = 1\n",
+    "            \n",
+    "            # returns a copy of slots at the end of every iteration for grading - code given\n",
+    "            yield self.slots.copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "f961d1fda62a6b1beee63c581de2029d",
+     "grade": true,
+     "grade_id": "cell-a7b7858dc829b35f",
+     "locked": true,
+     "points": 25,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "# Autograder tests\n",
+    "\n",
+    "from emoji import UNICODE_EMOJI\n",
+    "\n",
+    "twitter_stream = TwitterStream(\"assets/tweets\")\n",
+    "\n",
+    "num_slots, num_hash_fns = 7919, 5\n",
+    "stu_ans = BloomFilter(num_slots, num_hash_fns)\n",
+    "\n",
+    "# Collect emojis that appeared and that didn't appear\n",
+    "emojis_appeared = set()\n",
+    "for tweet in twitter_stream:\n",
+    "    emojis_appeared = emojis_appeared.union(extract_emojis(tweet))\n",
+    "emojis_not_appeared = set(UNICODE_EMOJI.keys()) - emojis_appeared\n",
+    "\n",
+    "# Do filtering. Don't have to collect the results. Just exhaust the stream\n",
+    "for _ in stu_ans.do_filtering(twitter_stream):\n",
+    "    pass\n",
+    "\n",
+    "\n",
+    "# Check that the check_appearance function returns a bool\n",
+    "assert isinstance(stu_ans.check_appearance(\"😂\"), (bool, np.bool_)), \"Q1: Your check_appearance function should return a bool value. \"\n",
+    "\n",
+    "\n",
+    "# Check that every item that appeared should be marked as appeared - correctness\n",
+    "for emoji in emojis_appeared:\n",
+    "    assert stu_ans.check_appearance(emoji), f\"Q1: {emoji} appeared but is marked as not appeared. \"\n",
+    "\n",
+    "    \n",
+    "# Check that every item that is marked as not appeared really didn't appear - no false negatives\n",
+    "for emoji in UNICODE_EMOJI:\n",
+    "    if not stu_ans.check_appearance(emoji):\n",
+    "        assert emoji in emojis_not_appeared, f\"Q1: {emoji} marked as not appeared but actually appeared. \"\n",
+    "\n",
+    "\n",
+    "# Start a new filtering for the hidden tests\n",
+    "stu_slots = stu_ans.do_filtering(twitter_stream)\n",
+    "\n",
+    "# Some hidden tests\n",
+    "\n",
+    "\n",
+    "del num_slots, num_hash_fns, twitter_stream, stu_ans, stu_slots, emojis_appeared, emojis_not_appeared"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "62eab668c8cb21f38af48fd44aa2ce2c",
+     "grade": false,
+     "grade_id": "cell-2939c5cace465fa0",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "## Question 2: Lossy Counter (25 pts)\n",
+    "\n",
+    "With reference to the lecture slides, let's now implement a lossy counter for emojis. The lossy counter should maintain counts of all emojis seen so far and only update the counts once a \"bucket\" of tweets arrive. The \"update\" of counts should include increments due to the emojis contained in the new bucket and decrements because we want to gradually get rid of less recent emojis. \n",
+    "\n",
+    "Again, a partially completed `LossyCounter` class is given to you below. Your job is to complete the `do_counting` function. It receives a stream object and iterates over the stream. Once a bucket of tweets have fully arrived, it updates the emoji counts as specified in the lecture slides. Finally it returns a copy of the `counts` of your `LossyCounter` for grading at every iteration, which you don't need to worry about. \n",
+    "\n",
+    "A few notes on implementation:\n",
+    "\n",
+    "* The autograder expects that all the requisite updates to emoji counts, **including both increments and decrements**, have been performed when it starts to check your `self.counts` for grading, immediately after a bucket of tweets have fully arrived. For example, if `self.bucket_size == 5`, the autograder will examine the content of your `self.counts` for grading right after the fifth tweet has been consumed by your `LossyCounter`; \n",
+    "\n",
+    "\n",
+    "* When your `LossyCounter` is dropping an emoji, it's not enough to set the count of that emoji to zero. The emoji must be completely deleted from your counts, as if it never appeared (why?);  \n",
+    "\n",
+    "\n",
+    "* You have complete freedom in how you'd like to implement the \"bucket\". In fact, not being a sampling algorithm, your `LossyCounter` doesn't have to actually store tweets in a bucket. You only need to make sure the emoji counts are updated correctly when a bucket of tweets have fully arrived, since that's all what the autograder checks. \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "metadata": {
+    "deletable": false,
+    "nbgrader": {
+     "checksum": "f935c842a52fb6d96fbbfe40606f1f61",
+     "grade": false,
+     "grade_id": "cell-e896207bcc59798b",
+     "locked": false,
+     "schema_version": 1,
+     "solution": true
+    }
+   },
+   "outputs": [],
+   "source": [
+    "from collections import defaultdict\n",
+    "\n",
+    "class LossyCounter:\n",
+    "    \n",
+    "    def __init__(self, bucket_size):\n",
+    "        \n",
+    "        self.bucket_size = bucket_size\n",
+    "        self.counts = defaultdict(int) # recommended to use defaultdict, but an ordinary dict works fine too\n",
+    "    \n",
+    "    def do_counting(self, stream):\n",
+    "        \"\"\"\n",
+    "        Iterates over a stream, counts the items and drops the infrequent ones in a bucket\n",
+    "        \"\"\"\n",
+    "        \n",
+    "        self.counts.clear() # reset the counts\n",
+    "        num_items_in_bucket = 0 # optional: the current number of items in the \"bucket\"\n",
+    "                \n",
+    "        for item in stream: # iterate over the stream\n",
+    "            \n",
+    "            # YOUR CODE HERE\n",
+    "            #extract emojis. add to self.counts dict.\n",
+    "            for emoji in extract_emojis(item):\n",
+    "                if emoji in self.counts:\n",
+    "                    self.counts[emoji] += 1\n",
+    "                else:\n",
+    "                    self.counts[emoji] = 1\n",
+    "                \n",
+    "            num_items_in_bucket += 1\n",
+    "            \n",
+    "            if num_items_in_bucket == self.bucket_size:\n",
+    "                \n",
+    "                num_items_in_bucket = 0\n",
+    "                \n",
+    "                for k, v in self.counts.items():\n",
+    "                    self.counts[k] -= 1\n",
+    "                    \n",
+    "            self.counts = {k:v for k,v in self.counts.items() if v > 0}\n",
+    "            \n",
+    "            # returns a copy of counts at the end of every iteration for grading - code given\n",
+    "            yield self.counts.copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "8fb9086c2439f0f94b162fafcd4f3ef9",
+     "grade": true,
+     "grade_id": "cell-b9358e200e7341eb",
+     "locked": true,
+     "points": 25,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "outputs": [],
+   "source": [
+    "# Autograder tests\n",
+    "\n",
+    "from collections import defaultdict\n",
+    "\n",
+    "twitter_stream = TwitterStream(\"assets/tweets\")\n",
+    "\n",
+    "# Sanity checks for a trivial case - use a large bucket size to include all tweets\n",
+    "bucket_size = 100000\n",
+    "stu_ans = LossyCounter(bucket_size)\n",
+    "\n",
+    "# Collect all emojis that appeared\n",
+    "emojis_appeared = set()\n",
+    "for tweet in twitter_stream:\n",
+    "    emojis_appeared = emojis_appeared.union(extract_emojis(tweet))\n",
+    "\n",
+    "# Do counting. Don't have to collect the results. Just exhaust the stream\n",
+    "for _ in stu_ans.do_counting(twitter_stream):\n",
+    "    pass\n",
+    "\n",
+    "\n",
+    "assert isinstance(stu_ans.counts, dict), \"Q2: You should store counts in a dict. \"\n",
+    "\n",
+    "assert len(stu_ans.counts) == len(emojis_appeared), \"Q2: The length of your emoji counts differs from the correct answer. \"\n",
+    "\n",
+    "assert not (emojis_appeared - set(stu_ans.counts.keys())), f\"Q2: Your emoji counts don't include {emojis_appeared - set(stu_ans.counts.keys())}. \"\n",
+    "\n",
+    "assert not (set(stu_ans.counts.keys()) - emojis_appeared), f\"Q2: Your emoji counts contain extra emojis: {set(stu_ans.counts.keys()) - emojis_appeared}. \"\n",
+    "\n",
+    "\n",
+    "# Re-define variables for the hidden tests\n",
+    "bucket_size = 100\n",
+    "stu_ans = LossyCounter(bucket_size)\n",
+    "stu_counts = stu_ans.do_counting(twitter_stream)\n",
+    "\n",
+    "# Some hidden tests\n",
+    "\n",
+    "\n",
+    "del twitter_stream, stu_ans, stu_counts, emojis_appeared, bucket_size"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "be0cc13f5017b3677e32c7951160f8b5",
+     "grade": false,
+     "grade_id": "cell-b06194f2c905a730",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "Let's see what the emoji distribution is after all tweets are processed."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 44,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{'😂': 1304, '😭': 911, '❤': 592, '🤣': 401, '🥺': 318, '✨': 317, '🥰': 236, '🔥': 231, '🏻': 228, '🙏': 207, '😍': 205, '💙': 175, '👏': 106, '♥': 97, '♀': 94, '😊': 77, '👍': 72, '💕': 69, '☺': 53, '‼': 47, '🤔': 44, '♂': 25, '💜': 22, '🏼': 21, '😅': 18, '👇': 16, '💦': 13, '😔': 13, '💔': 12, '🤒': 11, '🙇': 11, '💎': 11, '⭐': 10, '😢': 10, '🤦': 9, '👑': 9, '🌸': 7, '😆': 7, '🏾': 7, '🏷': 7, '🏽': 6, '😘': 6, '🤷': 6, '💀': 5, '🙄': 5, '❗': 5, '💢': 5, '💚': 4, '😋': 4, '🇸': 4, '😹': 4, '🤐': 4, '👥': 4, '💥': 4, '💛': 3, '🐥': 3, '😡': 2, '🎁': 2, '💪': 2, '😠': 2, '🤤': 2, '🚨': 2, '🤪': 2, '📣': 2, '😀': 2, '🍆': 2, '😏': 2, '🤮': 1, '😩': 1, '🤭': 1, '🔘': 1, '🖤': 1, '😃': 1, '👀': 1, '▶': 1, '😷': 1, '😁': 1, '〰': 1}\n"
+     ]
+    }
+   ],
+   "source": [
+    "bucket_size = 100\n",
+    "stu_ans = LossyCounter(bucket_size)\n",
+    "\n",
+    "# Do counting. Don't have to collect the results. Just exhaust the stream\n",
+    "for _ in stu_ans.do_counting(TwitterStream(\"assets/tweets\")):\n",
+    "    pass\n",
+    "\n",
+    "sorted_counts = {emoji: stu_ans.counts[emoji] for emoji in sorted(stu_ans.counts.keys(), key=stu_ans.counts.get, reverse=True)}\n",
+    "print(sorted_counts)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "deletable": false,
+    "editable": false,
+    "nbgrader": {
+     "checksum": "30814d9953a9ee6359e69bc0693a4a4f",
+     "grade": false,
+     "grade_id": "cell-5246f448e422cd04",
+     "locked": true,
+     "schema_version": 1,
+     "solution": false
+    }
+   },
+   "source": [
+    "Visualised in a bar graph, the emoji distribution seems to resemble a [Power Law](https://en.wikipedia.org/wiki/Power_law) distribution. A few emojis are used a lot while the majority of the emojis are rarely used. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 45,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 720x432 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "import matplotlib.pyplot as plt\n",
+    "%matplotlib inline\n",
+    "\n",
+    "fig, ax = plt.subplots(figsize=(10, 6))\n",
+    "ax.bar(range(len(sorted_counts)), sorted_counts.values())\n",
+    "ax.set_xlabel(\"Rank\")\n",
+    "ax.set_ylabel(\"Frequency\")\n",
+    "ax.set_title(\"Emoji Distribution\")\n",
+    "\n",
+    "del fig, ax"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "coursera": {
+   "schema_names": [
+    "mads_data_mining_ii_v1_assignment4_part2"
+   ]
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 1
+}
